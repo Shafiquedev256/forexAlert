@@ -1,0 +1,101 @@
+name: Build Forex Alert
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.27.4'
+  APP_NAME: 'Forex Alert'
+  # The Android application id becomes "<APP_ORG>.forex_alert". Set it once, keep it forever.
+  APP_ORG: 'com.forexalert'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate app icon and alarm sound
+        run: |
+          pip install pillow
+          python tools/generate_assets.py
+
+      - name: Create and configure Android project
+        run: |
+          flutter create --platforms=android --org "$APP_ORG" --project-name forex_alert .
+          rm -rf test
+          python tools/configure_platforms.py
+
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build release APK
+        run: flutter build apk --release --dart-define=TWELVE_DATA_API_KEY=${{ secrets.TWELVE_DATA_API_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forex-alert-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  ios:
+    runs-on: macos-latest
+    continue-on-error: true   # an iOS problem must never block the Android build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate app icon and alarm sound
+        run: |
+          pip install pillow
+          python tools/generate_assets.py
+
+      - name: Create and configure iOS project
+        run: |
+          flutter create --platforms=ios --org "$APP_ORG" --project-name forex_alert .
+          rm -rf test
+          python tools/configure_platforms.py
+
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+
+      - name: Build unsigned iOS app
+        run: flutter build ios --release --no-codesign --dart-define=TWELVE_DATA_API_KEY=${{ secrets.TWELVE_DATA_API_KEY }}
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qr forex-alert-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forex-alert-ios-unsigned
+          path: forex-alert-unsigned.ipa
