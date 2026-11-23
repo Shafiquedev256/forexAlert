@@ -48,8 +48,19 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Generate launcher icons
-        run: dart run flutter_launcher_icons:main
+      # Android ONLY - do not generate iOS icons in this job.
+      - name: Configure Android launcher icons
+        run: |
+          cat > flutter_launcher_icons_android.yaml <<'EOF'
+          flutter_launcher_icons:
+            android: true
+            ios: false
+            image_path: "assets/icon/icon.png"
+            adaptive_icon_background: "#1A56DB"
+            adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+          EOF
+
+          dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
 
       - name: Analyze Flutter project
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
@@ -93,21 +104,26 @@ jobs:
           rm -rf test
           python tools/configure_platforms.py
 
-      # FIX: Ensure the iOS AppIcon directory exists.
-      - name: Create iOS AppIcon directory
-        run: |
-          mkdir -p ios/Runner/Assets.xcassets/AppIcon.appiconset
-
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Generate iOS and Android launcher icons
-        run: dart run flutter_launcher_icons:main
-
-      - name: Verify iOS icons
+      # iOS ONLY - Android generation is disabled here.
+      - name: Configure iOS launcher icons
         run: |
-          test -d ios/Runner/Assets.xcassets/AppIcon.appiconset
-          ls -la ios/Runner/Assets.xcassets/AppIcon.appiconset
+          cat > flutter_launcher_icons_ios.yaml <<'EOF'
+          flutter_launcher_icons:
+            android: false
+            ios: true
+            image_path: "assets/icon/icon.png"
+            remove_alpha_ios: true
+          EOF
+
+          dart run flutter_launcher_icons -f flutter_launcher_icons_ios.yaml
+
+      - name: Verify iOS icon assets
+        run: |
+          test -f ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json
+          ls -la ios/Runner/Assets.xcassets/AppIcon.appiconset/
 
       - name: Build unsigned iOS app
         run: |
