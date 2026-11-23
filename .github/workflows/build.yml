@@ -1,3 +1,4 @@
+
 name: Build Forex Alert
 
 on:
@@ -9,12 +10,12 @@ on:
 env:
   FLUTTER_VERSION: '3.27.4'
   APP_NAME: 'Forex Alert'
-  # The Android application id becomes "<APP_ORG>.forex_alert". Set it once, keep it forever.
   APP_ORG: 'com.forexalert'
 
 jobs:
   android:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -44,21 +45,30 @@ jobs:
           rm -rf test
           python tools/configure_platforms.py
 
-      - run: flutter pub get
-      - run: dart run flutter_launcher_icons
-      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons:main
+
+      - name: Analyze Flutter project
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
-        run: flutter build apk --release --dart-define=TWELVE_DATA_API_KEY=${{ secrets.TWELVE_DATA_API_KEY }}
+        run: |
+          flutter build apk --release \
+            --dart-define=TWELVE_DATA_API_KEY=${{ secrets.TWELVE_DATA_API_KEY }}
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
         with:
           name: forex-alert-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
   ios:
     runs-on: macos-latest
-    continue-on-error: true   # an iOS problem must never block the Android build
+    continue-on-error: true
+
     steps:
       - uses: actions/checkout@v4
 
@@ -83,11 +93,26 @@ jobs:
           rm -rf test
           python tools/configure_platforms.py
 
-      - run: flutter pub get
-      - run: dart run flutter_launcher_icons
+      # FIX: Ensure the iOS AppIcon directory exists.
+      - name: Create iOS AppIcon directory
+        run: |
+          mkdir -p ios/Runner/Assets.xcassets/AppIcon.appiconset
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate iOS and Android launcher icons
+        run: dart run flutter_launcher_icons:main
+
+      - name: Verify iOS icons
+        run: |
+          test -d ios/Runner/Assets.xcassets/AppIcon.appiconset
+          ls -la ios/Runner/Assets.xcassets/AppIcon.appiconset
 
       - name: Build unsigned iOS app
-        run: flutter build ios --release --no-codesign --dart-define=TWELVE_DATA_API_KEY=${{ secrets.TWELVE_DATA_API_KEY }}
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=TWELVE_DATA_API_KEY=${{ secrets.TWELVE_DATA_API_KEY }}
 
       - name: Package unsigned IPA
         run: |
@@ -95,7 +120,8 @@ jobs:
           cp -R build/ios/iphoneos/Runner.app Payload/
           zip -qr forex-alert-unsigned.ipa Payload
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload unsigned iOS IPA
+        uses: actions/upload-artifact@v4
         with:
           name: forex-alert-ios-unsigned
           path: forex-alert-unsigned.ipa
