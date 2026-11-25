@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/app_config.dart';
 import '../core/instruments.dart';
 import '../models/price_alert.dart';
 import '../models/quote.dart';
@@ -41,11 +42,11 @@ class AlertEngine {
   final AlarmPlayer alarm;
   final AlertNotifier notifier;
 
-  static const _cryptoEveryMs = 5000;
   static const _staleQuoteMs = 10 * 60 * 1000;
 
   int _lastCrypto = 0;
   int _lastForex = 0;
+  int _forexPausedUntil = 0;
   bool _busy = false;
 
   Future<void> tick() async {
@@ -119,7 +120,7 @@ class AlertEngine {
     var attempted = false;
 
     final crypto = wanted.where((i) => i.source == PriceSource.binance).toList();
-    if (crypto.isNotEmpty && nowMs - _lastCrypto >= _cryptoEveryMs) {
+    if (crypto.isNotEmpty && nowMs - _lastCrypto >= AppConfig.cryptoIntervalSec * 1000) {
       _lastCrypto = nowMs;
       attempted = true;
       try {
@@ -132,15 +133,23 @@ class AlertEngine {
     }
 
     final forex = wanted.where((i) => i.source == PriceSource.twelveData).toList();
+    final forexEveryMs = effectiveForexIntervalSec(storage.forexIntervalSec, forex.length) * 1000;
     if (forex.isNotEmpty &&
         isForexMarketOpen(now.toUtc()) &&
-        nowMs - _lastForex >= storage.forexIntervalSec * 1000) {
+        nowMs >= _forexPausedUntil &&
+        nowMs - _lastForex >= forexEveryMs) {
       _lastForex = nowMs;
       attempted = true;
       try {
         updated.addAll(await prices.fetchTwelveData(forex, storage.apiKey));
       } on PriceException catch (e) {
         error = e.message;
+        if (e.rateLimited) {
+          // Out of credits: stop asking until the limit resets.
+          _forexPausedUntil = e.dailyLimit
+              ? DateTime.utc(now.year, now.month, now.day + 1, 0, 5).millisecondsSinceEpoch
+              : nowMs + 65 * 1000;
+        }
       } catch (_) {
         error = 'Network error, retrying';
       }
