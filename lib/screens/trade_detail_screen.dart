@@ -122,7 +122,7 @@ class _TradeDetailScreenState extends State<TradeDetailScreen> {
     if (snapshot.hasError) {
       final e = snapshot.error;
       if (e is ApiException && e.isNotFound) {
-        return const ListView(
+        return  ListView(
           children: [
             EmptyState(
               icon: Icons.search_off,
