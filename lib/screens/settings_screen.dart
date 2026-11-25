@@ -1,23 +1,44 @@
 import 'package:flutter/material.dart';
 
+import '../core/app_config.dart';
 import '../core/theme.dart';
+import '../journal/journal_controller.dart';
 import '../services/tone_store.dart';
 import '../state/app_state.dart';
 
+void openSettings(BuildContext context, AppState state, JournalController journal) {
+  Navigator.of(context).push<void>(
+    MaterialPageRoute(builder: (_) => SettingsScreen(state: state, journal: journal)),
+  );
+}
+
+/// App-bar button shared by every tab.
+Widget settingsButton(BuildContext context, AppState state, JournalController journal) {
+  return IconButton(
+    tooltip: 'Settings',
+    icon: const Icon(Icons.settings_outlined),
+    onPressed: () => openSettings(context, state, journal),
+  );
+}
+
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.state});
+  const SettingsScreen({super.key, required this.state, required this.journal});
 
   final AppState state;
+  final JournalController journal;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
-  late final TextEditingController _keyController =
-      TextEditingController(text: widget.state.apiKey);
+  late final TextEditingController _priceKey = TextEditingController(text: widget.state.apiKey);
+  late final TextEditingController _journalUrl = TextEditingController(text: widget.journal.baseUrl);
+  late final TextEditingController _journalKey = TextEditingController(text: widget.journal.apiKey);
   late Future<({bool notifications, bool battery})> _permissions = _loadPermissions();
-  bool _hideKey = true;
+  bool _hidePriceKey = true;
+  bool _hideJournalKey = true;
+  bool _testing = false;
 
   Future<({bool notifications, bool battery})> _loadPermissions() async => (
         notifications: await widget.state.notificationsGranted(),
@@ -33,7 +54,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _keyController.dispose();
+    _priceKey.dispose();
+    _journalUrl.dispose();
+    _journalKey.dispose();
     super.dispose();
   }
 
@@ -41,13 +64,43 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     // Coming back from a system settings page: re-check permissions.
     if (lifecycleState == AppLifecycleState.resumed) {
-      setState(() => _permissions = _loadPermissions());
+      setState(() {
+      _permissions = _loadPermissions();
+    });
     }
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _chooseDefaultTone() async {
     final path = await widget.state.pickTone();
     if (path != null) await widget.state.setDefaultTone(path);
+  }
+
+  Future<void> _saveJournal() async {
+    await widget.journal.saveConnection(_journalUrl.text, _journalKey.text);
+    if (mounted) _snack('Journal connection saved');
+  }
+
+  Future<void> _testJournal() async {
+    setState(() {
+      _testing = true;
+    });
+    await widget.journal.saveConnection(_journalUrl.text, _journalKey.text);
+    final message = await widget.journal.testConnection();
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+    });
+    _snack(message);
+  }
+
+  String _intervalLabel(int seconds) {
+    if (seconds < 60) return '$seconds seconds';
+    final m = seconds ~/ 60;
+    return m == 1 ? '1 minute' : '$m minutes';
   }
 
   @override
@@ -57,7 +110,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       listenable: state,
       builder: (context, _) {
         final scheme = Theme.of(context).colorScheme;
-        final perDay = state.activeForexSymbolCount * (86400 ~/ state.forexIntervalSec);
+        final symbols = state.activeForexSymbolCount;
+        final effective = effectiveForexIntervalSec(state.forexIntervalSec, symbols);
+        final perDay = symbols * (86400 ~/ effective);
+        final perMinute = symbols * 60 / effective;
+        final overLimit = perDay > AppConfig.freePlanCreditsPerDay || perMinute > AppConfig.freePlanCreditsPerMinute;
 
         return Scaffold(
           appBar: AppBar(title: const Text('Settings')),
@@ -75,19 +132,62 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   onSelectionChanged: (s) => state.setThemeMode(s.first),
                 ),
               ]),
-              _Section(title: 'Price feed', children: [
-                const Text('Gold and forex use Twelve Data (free key). BTC uses Binance, no key needed.'),
+              _Section(title: 'Trade journal connection', children: [
+                const Text(
+                  'Your journal API. The key is stored only on this phone and is never part of the app or the code.',
+                ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: _keyController,
-                  obscureText: _hideKey,
+                  controller: _journalUrl,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: const InputDecoration(labelText: 'API base URL'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _journalKey,
+                  obscureText: _hideJournalKey,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: 'Journal API key',
+                    suffixIcon: IconButton(
+                      icon: Icon(_hideJournalKey ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                      onPressed: () => setState(() => _hideJournalKey = !_hideJournalKey),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: OutlinedButton(onPressed: _saveJournal, child: const Text('Save'))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _testing ? null : _testJournal,
+                        child: _testing
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5))
+                            : const Text('Save and test'),
+                      ),
+                    ),
+                  ],
+                ),
+              ]),
+              _Section(title: 'Price feed', children: [
+                Text('BTC updates every ${AppConfig.cryptoIntervalSec} seconds (Binance, no key needed).'),
+                const SizedBox(height: 12),
+                const Text('Gold and forex use Twelve Data (free key).'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _priceKey,
+                  obscureText: _hidePriceKey,
                   autocorrect: false,
                   enableSuggestions: false,
                   decoration: InputDecoration(
                     labelText: 'Twelve Data API key',
                     suffixIcon: IconButton(
-                      icon: Icon(_hideKey ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                      onPressed: () => setState(() => _hideKey = !_hideKey),
+                      icon: Icon(_hidePriceKey ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                      onPressed: () => setState(() => _hidePriceKey = !_hidePriceKey),
                     ),
                   ),
                   onSubmitted: state.setApiKey,
@@ -97,40 +197,46 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   alignment: Alignment.centerRight,
                   child: FilledButton.tonal(
                     onPressed: () async {
-                      await state.setApiKey(_keyController.text);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(const SnackBar(content: Text('API key saved')));
-                      }
+                      await state.setApiKey(_priceKey.text);
+                      if (mounted) _snack('Price API key saved');
                     },
                     child: const Text('Save key'),
                   ),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                  value: const [60, 120, 180, 300, 600].contains(state.forexIntervalSec)
+                  value: const [0, 10, 30, 60, 120, 300, 600].contains(state.forexIntervalSec)
                       ? state.forexIntervalSec
-                      : 300,
+                      : 0,
                   decoration: const InputDecoration(labelText: 'Gold / forex check interval'),
                   items: const [
+                    DropdownMenuItem(value: 0, child: Text('Auto (fits the free plan)')),
+                    DropdownMenuItem(value: 10, child: Text('Every 10 seconds')),
+                    DropdownMenuItem(value: 30, child: Text('Every 30 seconds')),
                     DropdownMenuItem(value: 60, child: Text('Every 1 minute')),
                     DropdownMenuItem(value: 120, child: Text('Every 2 minutes')),
-                    DropdownMenuItem(value: 180, child: Text('Every 3 minutes')),
                     DropdownMenuItem(value: 300, child: Text('Every 5 minutes')),
                     DropdownMenuItem(value: 600, child: Text('Every 10 minutes')),
                   ],
                   onChanged: (v) => v == null ? null : state.setForexInterval(v),
                 ),
-                if (state.activeForexSymbolCount > 0) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'About $perDay credits/day on weekdays (free plan allows 800).',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: perDay > 800 ? scheme.error : scheme.onSurfaceVariant,
+                const SizedBox(height: 8),
+                Text(
+                  symbols == 0
+                      ? 'No gold or forex alerts are active, so nothing is fetched.'
+                      : 'Checking every ${_intervalLabel(effective)}. About $perDay credits/day '
+                          '(free plan: ${AppConfig.freePlanCreditsPerDay}/day, ${AppConfig.freePlanCreditsPerMinute}/min).',
+                  style: TextStyle(fontSize: 12, color: overLimit ? scheme.error : scheme.onSurfaceVariant),
+                ),
+                if (symbols > 0 && overLimit)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'This is above the free plan, so checks will pause whenever the limit is hit. '
+                      'A paid Twelve Data plan removes the limit.',
+                      style: TextStyle(fontSize: 12, color: scheme.error),
                     ),
                   ),
-                ],
               ]),
               _Section(title: 'Default ringtone', children: [
                 Row(
@@ -163,7 +269,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           ok: data?.notifications ?? false,
                           onFix: () async {
                             await state.requestNotifications();
-                            setState(() => _permissions = _loadPermissions());
+                            setState(() {
+      _permissions = _loadPermissions();
+    });
                           },
                         ),
                         _PermissionRow(
@@ -184,9 +292,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               ]),
               _Section(title: 'Privacy', children: [
                 const Text(
-                  'No account, analytics or ads. Alerts and settings never leave your phone. '
-                  'The only network requests go to Binance (BTC) and Twelve Data (gold and forex) '
-                  'over HTTPS. Put the app to sleep to switch everything off.',
+                  'No account, analytics or ads. Alerts and settings stay on your phone. '
+                  'Network requests go only to Binance (BTC), Twelve Data (gold and forex) and your own '
+                  'journal API, all over HTTPS. Screenshot links you add are loaded from their own hosts '
+                  'when you open a trade. Put the app to sleep to switch everything off.',
                 ),
               ]),
             ],

@@ -56,7 +56,9 @@ class _AlertFormScreenState extends State<AlertFormScreen> {
     try {
       final price = await widget.state.fetchPrice(_instrument);
       if (!mounted) return;
-      setState(() => _price = price);
+      setState(() {
+      _price = price;
+    });
     } on PriceException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -70,7 +72,9 @@ class _AlertFormScreenState extends State<AlertFormScreen> {
         _priceError = 'Could not load the current price';
       });
     } finally {
-      if (mounted) setState(() => _loadingPrice = false);
+      if (mounted) setState(() {
+      _loadingPrice = false;
+    });
     }
   }
 
@@ -91,7 +95,9 @@ class _AlertFormScreenState extends State<AlertFormScreen> {
 
   Future<void> _chooseTone() async {
     final path = await widget.state.pickTone();
-    if (path != null && mounted) setState(() => _tonePath = path);
+    if (path != null && mounted) setState(() {
+      _tonePath = path;
+    });
   }
 
   Future<void> _save() async {
