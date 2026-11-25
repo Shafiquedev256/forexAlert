@@ -1,4 +1,3 @@
-
 name: forex_alert
 description: Price alerts for gold, crypto and major forex pairs that ring until you stop them.
 publish_to: 'none'
@@ -17,6 +16,7 @@ dependencies:
   audioplayers: ^6.1.0
   file_picker: ^8.1.2
   path_provider: ^2.1.4
+  fl_chart: ^0.69.2
 
 dev_dependencies:
   flutter_test:
@@ -26,14 +26,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
   assets:
     - assets/sounds/default_alarm.wav
 
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/icon.png"
-  adaptive_icon_background: "#1A56DB"
-  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  image_path: 'assets/icon/icon.png'
+  adaptive_icon_background: '#1A56DB'
+  adaptive_icon_foreground: 'assets/icon/icon_foreground.png'
   remove_alpha_ios: true

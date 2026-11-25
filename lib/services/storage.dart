@@ -50,8 +50,8 @@ class AppStorage {
       );
   Future<void> setThemeMode(ThemeMode m) => _prefs.setString(_kTheme, m.name);
 
-  /// Seconds between forex/gold price checks (free plan: 800 credits/day).
-  int get forexIntervalSec => _prefs.getInt(_kInterval) ?? 300;
+  /// Seconds between gold/forex checks. 0 = Auto (see effectiveForexIntervalSec).
+  int get forexIntervalSec => _prefs.getInt(_kInterval) ?? 0;
   Future<void> setForexIntervalSec(int v) => _prefs.setInt(_kInterval, v);
 
   String? get defaultTonePath => _prefs.getString(_kTone);
@@ -72,6 +72,33 @@ class AppStorage {
 
   int get stopRequestedAt => _prefs.getInt(_kStopRequested) ?? 0;
   Future<void> requestStop() => _prefs.setInt(_kStopRequested, DateTime.now().millisecondsSinceEpoch);
+
+  // ---- Journal connection (kept only in app-private storage) --------------
+
+  static const defaultJournalUrl = 'https://forexjounalapi.vercel.app';
+  static const _kJournalUrl = 'journal_base_url';
+  static const _kJournalKey = 'journal_api_key';
+  static const _kCustomSetups = 'custom_setups';
+
+  String get journalBaseUrl {
+    final saved = _prefs.getString(_kJournalUrl);
+    return (saved == null || saved.isEmpty) ? defaultJournalUrl : saved;
+  }
+
+  String get journalApiKey => _prefs.getString(_kJournalKey) ?? '';
+
+  Future<void> setJournalConnection({required String baseUrl, required String apiKey}) async {
+    final cleaned = baseUrl.trim().replaceAll(RegExp(r'^[{\s]+|[}\s/]+$'), '');
+    await _prefs.setString(_kJournalUrl, cleaned);
+    await _prefs.setString(_kJournalKey, apiKey.trim());
+  }
+
+  List<String> get customSetups => _prefs.getStringList(_kCustomSetups) ?? const [];
+
+  Future<void> addCustomSetup(String setup) async {
+    if (setup.isEmpty || customSetups.contains(setup)) return;
+    await _prefs.setStringList(_kCustomSetups, [...customSetups, setup]);
+  }
 
   // ---- Written by the alert engine --------------------------------------
 

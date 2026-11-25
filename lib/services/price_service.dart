@@ -5,8 +5,13 @@ import 'package:http/http.dart' as http;
 import '../core/instruments.dart';
 
 class PriceException implements Exception {
-  PriceException(this.message);
+  PriceException(this.message, {this.rateLimited = false, this.dailyLimit = false});
+
   final String message;
+
+  /// The provider said we are out of credits (per minute or per day).
+  final bool rateLimited;
+  final bool dailyLimit;
 
   @override
   String toString() => message;
@@ -57,12 +62,21 @@ class PriceService {
       'apikey': apiKey,
     });
     final res = await _client.get(uri).timeout(_timeout);
+    if (res.statusCode == 429) {
+      throw PriceException('Twelve Data rate limit reached', rateLimited: true);
+    }
     if (res.statusCode != 200) throw PriceException('Twelve Data error ${res.statusCode}');
 
     final body = jsonDecode(res.body);
     if (body is! Map<String, dynamic>) throw PriceException('Unexpected price response');
     if (body['status'] == 'error') {
-      throw PriceException(body['message']?.toString() ?? 'Twelve Data error');
+      final message = body['message']?.toString() ?? 'Twelve Data error';
+      final limited = body['code'] == 429;
+      throw PriceException(
+        message,
+        rateLimited: limited,
+        dailyLimit: limited && message.toLowerCase().contains('day'),
+      );
     }
 
     final result = <String, double>{};

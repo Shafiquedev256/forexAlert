@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../journal/journal_controller.dart';
 import '../models/price_alert.dart';
 import '../state/app_state.dart';
 import '../widgets/alert_card.dart';
@@ -8,9 +9,10 @@ import 'alert_form_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.state});
+  const HomeScreen({super.key, required this.state, required this.journal});
 
   final AppState state;
+  final JournalController journal;
 
   void _openForm(BuildContext context, [PriceAlert? alert]) {
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -50,7 +52,7 @@ class HomeScreen extends StatelessWidget {
               children: [
                 Icon(Icons.notifications_active, color: scheme.primary),
                 const SizedBox(width: 8),
-                const Text('Forex Alert'),
+                const Text('Alerts'),
               ],
             ),
             actions: [
@@ -59,13 +61,7 @@ class HomeScreen extends StatelessWidget {
                 icon: Icon(sleeping ? Icons.wb_sunny_outlined : Icons.bedtime_outlined),
                 onPressed: () => state.setSleeping(!sleeping),
               ),
-              IconButton(
-                tooltip: 'Settings',
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => SettingsScreen(state: state)),
-                ),
-              ),
+              settingsButton(context, state, journal),
             ],
           ),
           floatingActionButton: sleeping
